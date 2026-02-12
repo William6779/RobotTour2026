@@ -16,8 +16,11 @@ import math
 import threading
 from TMC_2209.TMC_2209_StepperDriver import *
 
+WHEEL_DIAMETER_CM = 6.1244  # Adjust this based on your actual wheel diameter
+WHEEL_BASE_CM = 20.8          # Distance between left and right wheels (adjust as needed)
+
 class EV:
-    def __init__(self, wheel_diameter=6.1):
+    def __init__(self, wheel_diameter=WHEEL_DIAMETER_CM):
 
         # Motor specifications
         self.STEPS_PER_REV = 200        # NEMA 17 standard
@@ -44,6 +47,7 @@ class EV:
         # Since wheel moves MORE than motor due to gear ratio, we need FEWER motor steps per cm
         self.STEPS_PER_CM = self.ACTUAL_STEPS_PER_REV / (self.WHEEL_CIRCUMFERENCE_CM * self.GEAR_RATIO)
         
+        print(f"Wheel Diameter: {self.WHEEL_DIAMETER_CM:.2f} cm")
         print(f"Wheel circumference: {self.WHEEL_CIRCUMFERENCE_CM:.2f} cm")
         print(f"Gear ratio: {self.GEAR_RATIO:.2f} (wheel turns {self.GEAR_RATIO}x more than motor)")
         print(f"Steps per cm: {self.STEPS_PER_CM:.2f}")
@@ -58,6 +62,9 @@ class EV:
         self.RIGHT_DIR_PIN = 6      # Right motor direction  
         self.RIGHT_STEP_PIN = 13    # Right motor step
         self.RIGHT_ENABLE_PIN = 26  # Right motor enable
+        
+        # Vehicle specifications
+        self.WHEEL_BASE_CM = WHEEL_BASE_CM  # Distance between left and right wheels in cm
         
         # Initialize GPIO and TMC drivers
         self.setup_gpio()
@@ -103,10 +110,10 @@ class EV:
         print("Right TMC2209 initialized")
         # Configure both drivers
         for tmc in [self.tmc_left, self.tmc_right]:
-            print("Setting up TMC")
+ 
             # Set motor current (adjust based on your motor specs)
             tmc.set_current(400)  # 1.2A RMS for NEMA 17
-            print("current set")
+   
             # Enable microstep interpolation for smoother motion
             tmc.set_interpolation(True)
             
@@ -153,22 +160,15 @@ class EV:
         self.tmc_left.set_max_speed(int(steps_per_second))
         self.tmc_right.set_max_speed(int(steps_per_second))
         
-        # Set direction
-        if distance >= 0:
-            # Forward - both motors same direction
-            self.tmc_left.set_direction_reg(True)
-            self.tmc_right.set_direction_reg(True)
+        # Reset current position to 0 for relative movement
+        self.tmc_left.set_current_position(0)
+        self.tmc_right.set_current_position(0)
 
-        else:
-            # Backward - reverse both motors
-            self.tmc_left.set_direction_reg(False)
-            self.tmc_right.set_direction_reg(False)
-
-        time.sleep(0.05)  # Short delay to ensure direction is set before starting motion       
-
-        # Calculate target steps
-        target_steps = steps_needed if distance >= 0 else -steps_needed
+        # Calculate target steps (positive = forward, negative = backward)
+        # Swapped: negative for forward, positive for backward
+        target_steps = -steps_needed if distance >= 0 else steps_needed
         
+        print(f"Target steps: {target_steps}")
         print("Starting threaded coordinated movement...")
         start_time = time.time()
         
@@ -179,7 +179,6 @@ class EV:
         # Define motor movement functions
         def move_left_motor():
             try:
-
                 self.tmc_left.run_to_position_steps(target_steps, steps_per_second)
                 print("Left  motor movement completed")
             except Exception as e:
@@ -187,7 +186,7 @@ class EV:
         
         def move_right_motor():
             try:
-                print("Right motor target steps:",target_steps, steps_per_second)
+                print("Right motor target steps:", target_steps, steps_per_second)
                 self.tmc_right.run_to_position_steps(target_steps, steps_per_second)
                 print("Right motor movement completed")
             except Exception as e:
@@ -197,19 +196,13 @@ class EV:
         left_thread = threading.Thread(target=move_left_motor)
         right_thread = threading.Thread(target=move_right_motor)
         
-
         # Start both motors simultaneously
         left_thread.start()
         right_thread.start()
 
- 
-
-
         # Wait for both motors to complete
         left_thread.join()
         right_thread.join()
-
-
 
         # Disable motors
         self.tmc_left.set_motor_enabled(False)
@@ -222,6 +215,87 @@ class EV:
         print(f"Actual speed: {actual_speed:.2f} cm/s")
         
         
+    def turn(self, direction):
+        """
+        Turn the EV 90 degrees left or right by spinning wheels in opposite directions
+        
+        Args:
+            direction (str): "left" for CCW turn, "right" for CW turn
+        """
+        direction = direction.lower() if isinstance(direction, str) else ("left" if direction < 0 else "right")
+        print(f"Turning 90 degrees {direction}")
+        
+        # Calculate arc distance for 90-degree turn
+        # Each wheel travels 1/4 of the circle with diameter = wheel_base
+        arc_distance = (self.WHEEL_BASE_CM * math.pi) / 4  # 90 degrees = 1/4 of full circle
+        
+        steps_needed = int(arc_distance * self.STEPS_PER_CM)
+        turn_time = 2.0  # seconds to complete turn
+        steps_per_second = steps_needed / turn_time
+        
+        print(f"Arc distance per wheel: {arc_distance:.2f} cm")
+        print(f"Steps needed: {steps_needed}")
+        
+        # Set motor speeds
+        self.tmc_left.set_max_speed(int(steps_per_second))
+        self.tmc_right.set_max_speed(int(steps_per_second))
+        
+        # Reset current position to 0 for relative movement
+        self.tmc_left.set_current_position(0)
+        self.tmc_right.set_current_position(0)
+        
+        # Set target steps based on turn direction
+        if direction == "right":
+            # Right turn (CW): left wheel forward (negative), right wheel backward (positive)
+            left_target = -steps_needed
+            right_target = steps_needed
+        else:
+            # Left turn (CCW): left wheel backward (positive), right wheel forward (negative)
+            left_target = steps_needed
+            right_target = -steps_needed
+        
+        print(f"Left target: {left_target}, Right target: {right_target}")
+        
+        print("Starting turn...")
+        start_time = time.time()
+        
+        # Enable motors
+        self.tmc_left.set_motor_enabled(True)
+        self.tmc_right.set_motor_enabled(True)
+        
+        # Define motor movement functions
+        def move_left_motor():
+            try:
+                self.tmc_left.run_to_position_steps(left_target, steps_per_second)
+                print("Left motor turn completed")
+            except Exception as e:
+                print(f"Left motor error: {e}")
+        
+        def move_right_motor():
+            try:
+                self.tmc_right.run_to_position_steps(right_target, steps_per_second)
+                print("Right motor turn completed")
+            except Exception as e:
+                print(f"Right motor error: {e}")
+        
+        # Create and start threads for both motors
+        left_thread = threading.Thread(target=move_left_motor)
+        right_thread = threading.Thread(target=move_right_motor)
+        
+        left_thread.start()
+        right_thread.start()
+        
+        # Wait for both motors to complete
+        left_thread.join()
+        right_thread.join()
+        
+        # Disable motors
+        self.tmc_left.set_motor_enabled(False)
+        self.tmc_right.set_motor_enabled(False)
+        
+        elapsed_time = time.time() - start_time
+        print(f"Turn completed in {elapsed_time:.2f} seconds")
+    
     def cleanup(self):
         """Clean up GPIO resources"""
         # Stop motors
@@ -254,7 +328,7 @@ def run_program(filename="commands.txt"):
         print(f"program start time '{program_start_time}' ")
         ev = None
         diameter=0
-        time_compensation = 2
+        time_compensation = 0
         with open(filename, 'r') as f:
             for line in f:
                 line = line.strip()
@@ -271,36 +345,40 @@ def run_program(filename="commands.txt"):
                         print(f"Invalid ev_diameter command: {line} ({e})")
                 elif cmd == "ev_init":
 
-                    ev = EV(wheel_diameter=diameter if diameter>0 else 6.3643)
-                    if len(parts)==2:
-                        ev.REVERSE = True
+                    ev = EV(wheel_diameter=diameter if diameter>0 else WHEEL_DIAMETER_CM)
                     if ev:
                         ev.cleanup()
                     print(f"Initialized EV with wheel diameter: {ev.WHEEL_DIAMETER_CM} cm")
 
-                elif cmd == 'forward' and len(parts) == 3:
+                elif cmd == 'forward':
+                    print("len(parts)",len(parts))
                     try:
+                        if len(parts) ==1:
+                            dist=50
+                            t=5
+                        elif len(parts) ==2:
+                            dist=float(parts[1])
+                            t=5  
+                        elif len(parts) ==3:
+                            dist=float(parts[1])
+                            t=float(parts[2])  
                         if ev is None:
-                            ev = EV(wheel_diameter=diameter if diameter>0 else 6.3643)
+                            ev = EV(wheel_diameter=diameter if diameter>0 else WHEEL_DIAMETER_CM)
                             print(f"Initialized EV with wheel diameter: {ev.WHEEL_DIAMETER_CM} cm")
-                        dist = float(parts[1])
-                        t = float(parts[2])
                         print(f"Command: FORWARD {dist}cm in {t}s")
                         ev.move(dist, t-time_compensation)
                     except Exception as e:
                         print(f"Invalid forward command: {line} ({e})")
-                elif cmd == 'left' and len(parts) == 2:
+                elif cmd == 'left': 
                     try:
-                        deg = float(parts[1])
-                        print(f"Command: LEFT {deg} degrees (CCW)")
-                        ev.turn(-deg)
+                        print(f"Command: LEFT (CCW)")
+                        ev.turn('left')
                     except Exception as e:
                         print(f"Invalid left command: {line} ({e})")
-                elif cmd == 'right' and len(parts) == 2:
+                elif cmd == 'right':
                     try:
-                        deg = float(parts[1])
-                        print(f"Command: RIGHT {deg} degrees (CW)")
-                        ev.turn(deg)
+                        print(f"Command: RIGHT degrees (CW)")
+                        ev.turn('right')
                     except Exception as e:
                         print(f"Invalid right command: {line} ({e})")
                 else:
@@ -317,13 +395,15 @@ def run_program(filename="commands.txt"):
 # Example usage and test functions
 def test():
     """Test basic forward/backward movement"""
-    ev = EV(wheel_diameter=6.3643)  # Uses default wheel diameter
+    ev = EV(wheel_diameter=WHEEL_DIAMETER_CM)  # Uses default wheel diameter
     
     try:
         print("=== Testing Basic Movement ===")
         
         # Move forward 20cm in 2 seconds (10 cm/s)
-        ev.move(200, 10)
+        ev.move(50, 3)
+        time.sleep(1)
+        ev.turn("left")
         time.sleep(1)
         
     except KeyboardInterrupt:
@@ -334,8 +414,9 @@ def test():
 
 if __name__ == "__main__":
     try:
-        test()
+        run_program()
     except KeyboardInterrupt:
         print("\nProgram interrupted")
+        
     except Exception as e:
         print(f"Error: {e}")

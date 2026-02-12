@@ -1,0 +1,20 @@
+# /etc/systemd/system/gpio-buttons.service
+# sudo systemctl daemon-reload
+# sudo systemctl enable --now gpio-buttons.service
+# journalctl -u gpio-buttons.service -f
+
+[Unit]
+Description=GPIO Buttons (Start)
+After=multi-user.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/bash /home/pi/projects/rt/gpio-buttons.sh
+Restart=always
+# Must run as root to call reboot/poweroff without sudo
+User=root
+Group=root
+
+[Install]
+WantedBy=multi-user.target
+

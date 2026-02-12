@@ -1,0 +1,13 @@
+[project]
+name = "rt"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "gpiozero>=2.0.1",
+    "pigpio>=1.78",
+    "rpi-gpio>=0.7.1",
+    "rpi-lgpio>=0.6",
+    "tmc-2209-raspberry-pi>=0.5.7",
+]

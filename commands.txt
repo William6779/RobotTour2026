@@ -1,0 +1,30 @@
+# configure EV
+
+# adjustment
+# too short 8cm/70cm, new_diameter = old_diameter / (1+8/70)
+# too long  8cm/70cm, new diameter = old_diameter * (1+8/70) 
+ev_diameter 6.1244
+
+
+# initialize EV
+
+ev_init
+
+# forward
+# forward distance
+# forward distance time
+
+forward
+right
+forward
+right
+forward
+right
+forward
+right
+
+
+
+
+
+
