@@ -16,15 +16,29 @@ import math
 import threading
 from TMC_2209.TMC_2209_StepperDriver import *
 
+# adjustments
+# too short 8cm/70cm, new_diameter = old_diameter / (1+8/70)
+# too long  8cm/70cm, new diameter = old_diameter * (1+8/70) 
 WHEEL_DIAMETER_CM = 6.1244  # Adjust this based on your actual wheel diameter
-WHEEL_BASE_CM = 20.8          # Distance between left and right wheels (adjust as needed)
+
+
+# 20.8 under
+# 20.84 under
+# 20.845 under
+# 20.847 
+# 20.848 over
+# 20.85 over
+# 20.86 over
+# 20.9 over
+# 21.0 over
+WHEEL_BASE_CM = 20.847       # Distance between left and right wheels (adjust as needed)
 
 class EV:
     def __init__(self, wheel_diameter=WHEEL_DIAMETER_CM):
 
         # Motor specifications
         self.STEPS_PER_REV = 200        # NEMA 17 standard
-        self.MICROSTEPS = 8             # TMC2209 microstepping
+        self.MICROSTEPS = 16             # TMC2209 microstepping
         self.ACTUAL_STEPS_PER_REV = self.STEPS_PER_REV * self.MICROSTEPS  # 1600 steps
         
         # Mechanical specifications
@@ -127,7 +141,7 @@ class EV:
             tmc.set_internal_rsense(False)
             
             # Set acceleration (steps/sec²)
-            tmc.set_acceleration(1000)
+            tmc.set_acceleration(3000)
         
         # Set direction registers
         self.tmc_left.set_direction_reg(False)   # Normal direction
@@ -355,10 +369,10 @@ def run_program(filename="commands.txt"):
                     try:
                         if len(parts) ==1:
                             dist=50
-                            t=5
+                            t=3
                         elif len(parts) ==2:
                             dist=float(parts[1])
-                            t=5  
+                            t=3  
                         elif len(parts) ==3:
                             dist=float(parts[1])
                             t=float(parts[2])  
@@ -369,6 +383,24 @@ def run_program(filename="commands.txt"):
                         ev.move(dist, t-time_compensation)
                     except Exception as e:
                         print(f"Invalid forward command: {line} ({e})")
+                elif cmd == 'back':
+                    try:
+                        if len(parts) ==1:
+                            dist=-50
+                            t=3
+                        elif len(parts) ==2:
+                            dist=float(parts[1])
+                            t=3  
+                        elif len(parts) ==3:
+                            dist=float(parts[1])
+                            t=float(parts[2])  
+                        if ev is None:
+                            ev = EV(wheel_diameter=diameter if diameter>0 else WHEEL_DIAMETER_CM)
+                            print(f"Initialized EV with wheel diameter: {ev.WHEEL_DIAMETER_CM} cm")
+                        print(f"Command: BACK {-dist}cm in {t}s")
+                        ev.move(dist, t-time_compensation)
+                    except Exception as e:
+                        print(f"Invalid back command: {line} ({e})")                
                 elif cmd == 'left': 
                     try:
                         print(f"Command: LEFT (CCW)")
@@ -383,6 +415,7 @@ def run_program(filename="commands.txt"):
                         print(f"Invalid right command: {line} ({e})")
                 else:
                     print(f"Ignoring unrecognized command: {line}")
+                time.sleep(0.5)
         program_end_time = time.time()
         print(f"Program completed in {program_end_time - program_start_time:.2f} seconds")
         if ev:
@@ -401,10 +434,14 @@ def test():
         print("=== Testing Basic Movement ===")
         
         # Move forward 20cm in 2 seconds (10 cm/s)
-        ev.move(50, 3)
+
+        ev.turn("left")
         time.sleep(1)
         ev.turn("left")
         time.sleep(1)
+        ev.turn("left")
+        time.sleep(1)
+        ev.turn("left")
         
     except KeyboardInterrupt:
         print("Test interrupted")
@@ -415,6 +452,7 @@ def test():
 if __name__ == "__main__":
     try:
         run_program()
+        #test()
     except KeyboardInterrupt:
         print("\nProgram interrupted")
         

@@ -10,18 +10,25 @@ ev_diameter 6.1244
 
 ev_init
 
+# Available commands:
 # forward
 # forward distance
 # forward distance time
+# 
+# half-forward
+# back
+# left
+# right
 
-forward
+
+forward 
 right
 forward
-right
-forward
-right
-forward
-right
+left
+forward 25
+
+
+
 
 
 
