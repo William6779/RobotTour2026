@@ -14,13 +14,19 @@ import RPi.GPIO as GPIO
 import time
 import math
 import threading
+import sqlite3
 from TMC_2209.TMC_2209_StepperDriver import *
+
+
+ACCELERATION = 3000  # steps/sec² (adjust based on your motor specs)
+CURRENT = 400
+DEFAULT_MOVE_BLOCK=50 # 50cm
+DEFAULT_MOVE_SECOND=3
 
 # adjustments
 # too short 8cm/70cm, new_diameter = old_diameter / (1+8/70)
 # too long  8cm/70cm, new diameter = old_diameter * (1+8/70) 
 WHEEL_DIAMETER_CM = 6.1244  # Adjust this based on your actual wheel diameter
-
 
 # 20.8 under
 # 20.84 under
@@ -126,7 +132,7 @@ class EV:
         for tmc in [self.tmc_left, self.tmc_right]:
  
             # Set motor current (adjust based on your motor specs)
-            tmc.set_current(400)  # 1.2A RMS for NEMA 17
+            tmc.set_current(CURRENT)  # 1.2A RMS for NEMA 17
    
             # Enable microstep interpolation for smoother motion
             tmc.set_interpolation(True)
@@ -141,7 +147,7 @@ class EV:
             tmc.set_internal_rsense(False)
             
             # Set acceleration (steps/sec²)
-            tmc.set_acceleration(3000)
+            tmc.set_acceleration(ACCELERATION)
         
         # Set direction registers
         self.tmc_left.set_direction_reg(False)   # Normal direction
@@ -337,12 +343,30 @@ def run_program(filename="commands.txt"):
     Lines starting with '#' are treated as comments and ignored.
     Unrecognized commands are ignored.
     """
+    # Initialize database
+    db_path = "command_log.db"
+    conn = sqlite3.connect(db_path)
+    cursor = conn.cursor()
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS command_log (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            start_timestamp DATETIME,
+            command TEXT,
+            parameter TEXT,
+            duration REAL,
+            timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+    conn.commit()
+    
     try:
         program_start_time = time.time()
         print(f"program start time '{program_start_time}' ")
-        ev = None
-        diameter=0
-        time_compensation = 0
+
+        ev = EV(wheel_diameter=WHEEL_DIAMETER_CM)
+        print(f"Initialized EV with wheel diameter: {ev.WHEEL_DIAMETER_CM} cm")
+        program_end_time = time.time()
+        print(f"EV initialized in {program_end_time - program_start_time:.2f} seconds")
         with open(filename, 'r') as f:
             for line in f:
                 line = line.strip()
@@ -352,55 +376,48 @@ def run_program(filename="commands.txt"):
                 if len(parts) == 0:
                     continue
                 cmd = parts[0]
-                if cmd == 'ev_diameter' and len(parts) == 2:
-                    try:
-                        diameter = float(parts[1])
-                    except Exception as e:
-                        print(f"Invalid ev_diameter command: {line} ({e})")
-                elif cmd == "ev_init":
+                param = ' '.join(parts[1:]) if len(parts) > 1 else ''
 
-                    ev = EV(wheel_diameter=diameter if diameter>0 else WHEEL_DIAMETER_CM)
-                    if ev:
-                        ev.cleanup()
-                    print(f"Initialized EV with wheel diameter: {ev.WHEEL_DIAMETER_CM} cm")
-
-                elif cmd == 'forward':
-                    print("len(parts)",len(parts))
+                cmd_start_time = time.time()
+                cmd_start_timestamp = time.strftime('%Y-%m-%d %H:%M:%S')
+                
+                if cmd == 'move':
                     try:
                         if len(parts) ==1:
-                            dist=50
-                            t=3
+                            dist=DEFAULT_MOVE_BLOCK
+                            t=DEFAULT_MOVE_SECOND
                         elif len(parts) ==2:
                             dist=float(parts[1])
-                            t=3  
+                            t=DEFAULT_MOVE_BLOCK
                         elif len(parts) ==3:
                             dist=float(parts[1])
                             t=float(parts[2])  
-                        if ev is None:
-                            ev = EV(wheel_diameter=diameter if diameter>0 else WHEEL_DIAMETER_CM)
-                            print(f"Initialized EV with wheel diameter: {ev.WHEEL_DIAMETER_CM} cm")
-                        print(f"Command: FORWARD {dist}cm in {t}s")
-                        ev.move(dist, t-time_compensation)
+                        print(f"Command: MOVE {dist}cm in {t}s")
+                        ev.move(dist, t)
                     except Exception as e:
-                        print(f"Invalid forward command: {line} ({e})")
+                        print(f"Invalid MOVE command: {line} ({e})")
+                elif cmd == 'forward':
+                    try:
+                        if len(parts) == 1:
+                            block = 1
+                        else:
+                            block = float(parts[1])
+                        dist = block * DEFAULT_MOVE_BLOCK
+                        print(f"Command: FORWARD {block} blocks ({dist}cm) in {DEFAULT_MOVE_SECOND}s")
+                        ev.move(dist, DEFAULT_MOVE_SECOND)
+                    except Exception as e:
+                        print(f"Invalid FORWARD command: {line} ({e})")                
                 elif cmd == 'back':
                     try:
-                        if len(parts) ==1:
-                            dist=-50
-                            t=3
-                        elif len(parts) ==2:
-                            dist=float(parts[1])
-                            t=3  
-                        elif len(parts) ==3:
-                            dist=float(parts[1])
-                            t=float(parts[2])  
-                        if ev is None:
-                            ev = EV(wheel_diameter=diameter if diameter>0 else WHEEL_DIAMETER_CM)
-                            print(f"Initialized EV with wheel diameter: {ev.WHEEL_DIAMETER_CM} cm")
-                        print(f"Command: BACK {-dist}cm in {t}s")
-                        ev.move(dist, t-time_compensation)
+                        if len(parts) == 1:
+                            block = 1
+                        else:
+                            block = float(parts[1])
+                        dist = -block * DEFAULT_MOVE_BLOCK
+                        print(f"Command: BACK {block} blocks ({-dist}cm) in {DEFAULT_MOVE_SECOND}s")
+                        ev.move(dist, DEFAULT_MOVE_SECOND)
                     except Exception as e:
-                        print(f"Invalid back command: {line} ({e})")                
+                        print(f"Invalid BACK command: {line} ({e})")
                 elif cmd == 'left': 
                     try:
                         print(f"Command: LEFT (CCW)")
@@ -415,6 +432,18 @@ def run_program(filename="commands.txt"):
                         print(f"Invalid right command: {line} ({e})")
                 else:
                     print(f"Ignoring unrecognized command: {line}")
+                    time.sleep(0.5)
+                    continue
+                
+                # Record command execution time
+                cmd_duration = time.time() - cmd_start_time
+                cursor.execute(
+                    'INSERT INTO command_log (start_timestamp, command, parameter, duration) VALUES (?, ?, ?, ?)',
+                    (cmd_start_timestamp, cmd, param, cmd_duration)
+                )
+                conn.commit()
+                print(f"Logged: {cmd} '{param}' took {cmd_duration:.2f}s")
+                
                 time.sleep(0.5)
         program_end_time = time.time()
         print(f"Program completed in {program_end_time - program_start_time:.2f} seconds")
@@ -424,7 +453,8 @@ def run_program(filename="commands.txt"):
         print(f"Command file '{filename}' not found.")
     except Exception as e:
         print(f"Error reading commands: {e}")
-
+    finally:
+        conn.close()
 # Example usage and test functions
 def test():
     """Test basic forward/backward movement"""
@@ -456,5 +486,4 @@ if __name__ == "__main__":
     except KeyboardInterrupt:
         print("\nProgram interrupted")
         
-    except Exception as e:
-        print(f"Error: {e}")
+    except Exception as e:        print(f"Error: {e}")
