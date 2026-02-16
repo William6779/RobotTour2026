@@ -18,10 +18,10 @@ import sqlite3
 from TMC_2209.TMC_2209_StepperDriver import *
 
 
-ACCELERATION = 3000  # steps/sec² (adjust based on your motor specs)
+ACCELERATION = 50000  # steps/sec² (adjust based on your motor specs)
 CURRENT = 400
 DEFAULT_MOVE_BLOCK=50 # 50cm
-DEFAULT_MOVE_SECOND=3
+DEFAULT_MOVE_SECOND=1
 
 # adjustments
 # too short 8cm/70cm, new_diameter = old_diameter / (1+8/70)
@@ -44,7 +44,7 @@ class EV:
 
         # Motor specifications
         self.STEPS_PER_REV = 200        # NEMA 17 standard
-        self.MICROSTEPS = 16             # TMC2209 microstepping
+        self.MICROSTEPS = 16            # TMC2209 microstepping
         self.ACTUAL_STEPS_PER_REV = self.STEPS_PER_REV * self.MICROSTEPS  # 1600 steps
         
         # Mechanical specifications
@@ -138,7 +138,7 @@ class EV:
             tmc.set_interpolation(True)
             
             # Use stealthChop for quiet operation
-            tmc.set_spreadcycle(False)
+            tmc.set_spreadcycle(True)
             
             # Set microstepping resolution
             tmc.set_microstepping_resolution(self.MICROSTEPS)
@@ -250,7 +250,7 @@ class EV:
         arc_distance = (self.WHEEL_BASE_CM * math.pi) / 4  # 90 degrees = 1/4 of full circle
         
         steps_needed = int(arc_distance * self.STEPS_PER_CM)
-        turn_time = 2.0  # seconds to complete turn
+        turn_time = 1.0  # seconds to complete turn
         steps_per_second = steps_needed / turn_time
         
         print(f"Arc distance per wheel: {arc_distance:.2f} cm")
@@ -432,7 +432,7 @@ def run_program(filename="commands.txt"):
                         print(f"Invalid right command: {line} ({e})")
                 else:
                     print(f"Ignoring unrecognized command: {line}")
-                    time.sleep(0.5)
+                    time.sleep(0.1)
                     continue
                 
                 # Record command execution time
@@ -444,7 +444,7 @@ def run_program(filename="commands.txt"):
                 conn.commit()
                 print(f"Logged: {cmd} '{param}' took {cmd_duration:.2f}s")
                 
-                time.sleep(0.5)
+                time.sleep(0.05)
         program_end_time = time.time()
         print(f"Program completed in {program_end_time - program_start_time:.2f} seconds")
         if ev:

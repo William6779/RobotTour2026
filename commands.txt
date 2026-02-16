@@ -1,15 +1,19 @@
 # Available commands:
-# move distance time
+#
+# move distance moves by cm. if distance is negative, move backwards
+# use it as the last command to adjust time. 
+# last 'move' has 2 seconds overhead. 
+# Example: simulate_time reports 60 seconds. Target 70 seconds. 
+# the last command should be "move distance 8"
+#
+# move distance(cm) time
 # forward block
 # back block
 # left
 # right
 
-
-forward 2
-back 2
-forward 0.5
-
+forward 1
+back 1
 
 
 
